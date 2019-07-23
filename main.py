@@ -1,11 +1,10 @@
 import json
-#import urllib3.request as request
-#import ssl
 import urllib3
 
 from flask import Flask, jsonify, request as flask_request
 app = Flask(__name__)
 
+APIKEY = "<KEY>"
 db = None
 
 class Datastore:
@@ -20,18 +19,14 @@ class Datastore:
       'Authorization': 'Bearer <CREDS>',
       'Content-Type': 'application/json'
     }
- #   ctx = ssl.SSLContext()
- #   ctx.verify_mode = ssl.CERT_NONE   #eventbrite API uses self signed cert
 
     http = urllib3.PoolManager(cert_reqs='CERT_NONE')
     # pre load 4 pages of events in memory 
     for p in range(4):
       print(p)
 
-#      events = request.urlopen(request.Request(EVENTBRITE_URL.format(p+1), headers=headers),context=ctx)
       events = http.request('GET', EVENTBRITE_URL.format(p+1), headers=headers)
 
-#      for e in json.loads(events.read())["events"]:
       for e in json.loads(events.data)["events"]:
         self.db[e["id"]] = e
 
@@ -39,6 +34,10 @@ class Datastore:
 
   def get_events(self):
     return self.db
+
+  def update_event(self, id, event):
+    self.db[id] = event
+    return event
 
 
 db=Datastore()
@@ -51,6 +50,10 @@ def events():
   event_name = flask_request.args.get('name')
   event_start_date = flask_request.args.get('startDate')
   org_name = flask_request.args.get('orgName')
+
+  apikey = flask_request.args.get('apiKey')
+  if (apikey != APIKEY):
+    return (jsonify({"message":"Invalid or missing API key"}), 401)
 
   # filter events based on 'cost', ie, free/paid
   if (is_free):
@@ -77,7 +80,32 @@ def events():
 @app.route("/events/<event_id>", methods=['GET'])
 def event_entity(event_id):
   print("Event entity")
+
+  apikey = flask_request.args.get('apiKey')
+  if (apikey != APIKEY):
+    return (jsonify({"message":"Invalid or missing API key"}), 401)
+
   return (jsonify(([event for event in db.get_events().values() if event["id"] == event_id])[0]))
+
+@app.route("/events/<event_id>", methods=['PUT'])
+def update_event(event_id):
+  print("Update event entity")
+  print(flask_request.json)
+
+  apikey = flask_request.args.get('apiKey')
+  if (apikey != APIKEY):
+    return (jsonify({"message":"Invalid or missing API key"}), 401)
+  
+  event = None
+  events = [event for event in db.get_events().values() if event["id"] == event_id]
+  if (events): event = events[0]
+
+  if (event):
+    db.update_event(event_id,flask_request.json)
+  else:
+    return (jsonify({"message":"Event Not Found"}), 404)
+
+  return (flask_request.json)
 
 if __name__ == '__main__':
     app.run(debug=True)  
